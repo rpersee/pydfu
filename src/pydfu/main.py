@@ -1,4 +1,5 @@
 import pyudev
+
 from . import dfu_util
 
 context = pyudev.Context()

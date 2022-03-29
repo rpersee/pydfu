@@ -6,9 +6,9 @@ See http://dfu-util.sourceforge.net/dfu-util.1.html for documentation.
 
 from __future__ import annotations
 
+import re
 import subprocess
 from abc import ABCMeta, abstractmethod
-import re
 from collections.abc import Generator
 
 
