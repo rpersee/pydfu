@@ -105,8 +105,25 @@ class FileRequest(Request):
         self._command.extend(("-Z", size))
         return self
 
-    def dfuse_address(self, address) -> FileRequest:
-        self._command.extend(("-s", address))
+    def dfuse_address(self, address, length=None, modifiers=None) -> FileRequest:
+        dfuse = [address, ]
+
+        if length is not None:
+            assert re.match("0x[0-9a-f]", length, re.IGNORECASE)
+            dfuse.append(length)
+
+        if modifiers is not None:
+            options = {
+                'force',  # You really know what you are doing!
+                'leave',  # Leave DFU mode (jump to application)
+                'mass-erase',  # Erase the whole device (requires "force")
+                'unprotect',  # Erase read protected device (requires "force")
+                'will-reset'  # Expect device to reset (e.g. option bytes write)
+            }
+            assert all(mod in options for mod in modifiers)
+            dfuse.extend(modifiers)
+
+        self._command.extend(("-s", ':'.join(dfuse)))
         return self
 
 
@@ -123,14 +140,26 @@ class EnumRequest(Request):
 
 
 def upload(file: str) -> FileRequest:
+    """Read device memory into a file.
+
+    :param file: Target file to write into.
+    """
+
     return FileRequest("-U", file)
 
 
 def download(file: str) -> FileRequest:
+    """Flash a file to the device memory.
+
+    :param file: A .dfu (special DfuSe format) or .bin (binary) file to flash.
+    """
+
     return FileRequest("-D", file)
 
 
 def enum() -> Request:
+    """Enumerates the currently attached DFU-capable USB devices."""
+
     return EnumRequest("-l")
 
 
