@@ -21,5 +21,5 @@ class Device(BaseModel):
 
 
 @router.get("/devices/", tags=["devices"], response_model=list[Device])
-async def get_users():
+async def get_devices():
     return dfu_util.enum().exec()
