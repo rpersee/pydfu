@@ -1,6 +1,9 @@
+import asyncio
+
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 
+from .common.publisher import publisher
 from .routers import devices
 
 description = """
@@ -32,6 +35,11 @@ app = FastAPI(
 )
 
 app.include_router(devices.router)
+
+
+@app.on_event("startup")
+async def start_publisher():
+    asyncio.create_task(publisher.run())
 
 
 @app.get("/", response_class=RedirectResponse)  # status_code=301  // moved permanently
