@@ -41,7 +41,8 @@ class Publisher(metaclass=SingletonMeta):
                     continue
 
                 if not vendor_is_ST(device):
-                    pass
+                    # ignore non ST devices
+                    continue
 
                 for queue in self.subscriptions:
                     await queue.put(device)
