@@ -6,8 +6,8 @@ from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 from starlette.requests import Request
 
+from ..common import dfu_util
 from ..common.publisher import Publisher
-from ... import dfu_util
 
 router = APIRouter()
 
