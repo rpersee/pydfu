@@ -1,55 +1,55 @@
 import asyncio
-import warnings
-from functools import partial
 
-from pyudev import Context, Monitor, Device
-
-from .singleton import SingletonMeta
-
-context = Context()
-
-# https://pyudev.readthedocs.io/en/latest/guide.html#synchronous-monitoring
-monitor = Monitor.from_netlink(context)
-monitor.filter_by('usb')
+from pyudev import Context, Monitor, Device, MonitorObserver
 
 
-# noinspection PyPep8Naming
-def vendor_is_ST(dev: Device) -> bool:
-    return dev.attributes.get("idVendor") == b'0483'
+class Publisher:
+    subscriptions: set[asyncio.Queue]
 
+    context: Context
+    monitor: Monitor
+    observer: MonitorObserver
 
-class Publisher(metaclass=SingletonMeta):
-    def __init__(self):
-        # self.logger = logging.getLogger(__name__).getChild(self.__class__.__name__)
-        self.subscriptions: set[asyncio.Queue] = set()
+    # noinspection PyPep8Naming
+    @staticmethod
+    def vendor_is_ST(dev: Device) -> bool:
+        return dev.attributes.get("idVendor") == b'0483'
 
-    async def subscribe(self, queue: asyncio.Queue):
-        self.subscriptions.add(queue)
+    @staticmethod
+    def publish_event(action, device):
+        if action in ('bind', 'unbind'):
+            return
 
-    async def unsubscribe(self, queue: asyncio.Queue):
-        self.subscriptions.remove(queue)
+        if not Publisher.vendor_is_ST(device):
+            pass
 
-    async def run(self):
-        loop = asyncio.get_event_loop()
+        for queue in Publisher.subscriptions:
+            queue.put_nowait(device)
 
-        try:
-            while True:
-                # do not wait indefinitely to allow for shutdown / hot reload
-                device = await loop.run_in_executor(executor=None, func=partial(monitor.poll, 3))  # Awaitable[Device]
-                if device is None:
-                    # go to next iteration if no device was retrieved
-                    continue
+    @classmethod
+    async def start(cls):
+        cls.subscriptions = set()
 
-                if not vendor_is_ST(device):
-                    # ignore non ST devices
-                    continue
+        cls.context = Context()
 
-                for queue in self.subscriptions:
-                    await queue.put(device)
+        # https://pyudev.readthedocs.io/en/latest/guide.html#synchronous-monitoring
+        cls.monitor = Monitor.from_netlink(cls.context)
+        cls.monitor.filter_by('usb')
 
-        except asyncio.CancelledError as e:
-            warnings.warn(f"Received cancelled error.")
-            raise e
+        cls.observer = MonitorObserver(cls.monitor, cls.publish_event)
+        cls.observer.start()
 
+    @classmethod
+    async def stop(cls):
+        cls.observer.stop()
+        del cls.monitor
+        del cls.context
+        del cls.subscriptions
 
-publisher = Publisher()
+    @classmethod
+    async def subscribe(cls, queue: asyncio.Queue):
+        cls.subscriptions.add(queue)
+
+    @classmethod
+    async def unsubscribe(cls, queue: asyncio.Queue):
+        cls.subscriptions.remove(queue)

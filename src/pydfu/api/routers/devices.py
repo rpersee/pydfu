@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 from starlette.requests import Request
 
-from ..common.publisher import publisher
+from ..common.publisher import Publisher
 from ... import dfu_util
 
 router = APIRouter()
@@ -35,7 +35,7 @@ async def get_devices():
 async def get_events(req: Request):
     async def event_publisher():
         queue = asyncio.Queue()
-        await publisher.subscribe(queue)
+        await Publisher.subscribe(queue)
 
         try:
             while True:
@@ -55,7 +55,7 @@ async def get_events(req: Request):
             raise e
 
         finally:
-            await publisher.unsubscribe(queue)
+            await Publisher.unsubscribe(queue)
             del queue
 
     return EventSourceResponse(event_publisher())
