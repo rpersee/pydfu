@@ -1,9 +1,12 @@
 import asyncio
 
+from threading import Lock
 from pyudev import Context, Monitor, Device, MonitorObserver
 
 
 class Publisher:
+    lock = Lock()
+    # subscriptions set is accessed from multiple threads
     subscriptions: set[asyncio.Queue]
 
     context: Context
@@ -23,12 +26,14 @@ class Publisher:
         if not Publisher.vendor_is_ST(device):
             pass
 
-        for queue in Publisher.subscriptions:
-            queue.put_nowait(device)
+        with Publisher.lock:
+            for queue in Publisher.subscriptions:
+                queue.put_nowait(device)
 
     @classmethod
     async def start(cls):
-        cls.subscriptions = set()
+        with cls.lock:
+            cls.subscriptions = set()
 
         cls.context = Context()
 
@@ -44,12 +49,15 @@ class Publisher:
         cls.observer.stop()
         del cls.monitor
         del cls.context
-        del cls.subscriptions
+        with cls.lock:
+            del cls.subscriptions
 
     @classmethod
     async def subscribe(cls, queue: asyncio.Queue):
-        cls.subscriptions.add(queue)
+        with cls.lock:
+            cls.subscriptions.add(queue)
 
     @classmethod
     async def unsubscribe(cls, queue: asyncio.Queue):
-        cls.subscriptions.remove(queue)
+        with cls.lock:
+            cls.subscriptions.remove(queue)
