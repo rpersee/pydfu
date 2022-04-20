@@ -19,21 +19,34 @@ class AbstractRequest(metaclass=ABCMeta):
         return NotImplemented
 
     @staticmethod
-    def run(command: list[str]) -> str:
-        process = subprocess.run(command, capture_output=True)
-        if process.stderr:  # dfu-util returns a zero exit status even when stderr is not empty
-            raise subprocess.CalledProcessError(process.returncode, process.args, process.stdout, process.stderr)
-        return process.stdout.decode()
+    def run(command: list[str]) -> Generator[str]:
+        with subprocess.Popen(command,
+                              stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE,
+                              encoding="utf-8",
+                              bufsize=1) as process:
+            for line in process.stdout:
+                yield line
+
+            return_code = process.poll()
+
+            # stderr = process.stderr.read()
+            # if stderr:  # dfu-util returns a zero exit status even when stderr is not empty
+            #     raise subprocess.CalledProcessError(return_code, process.args, process.stdout, process.stderr)
 
     @staticmethod
-    def parse(output: str) -> Generator:
-        for line in output.splitlines()[7:]:
+    def parse(output: Generator[str]) -> Generator:
+        skip = 7
+        for line in output:
+            if skip > 0:
+                skip -= 1
+                continue
+
             yield line
 
-    def exec(self) -> list:
+    def exec(self) -> Generator:
         output = self.run(self.command)
-        parsed = list(self.parse(output))
-        return parsed
+        yield from self.parse(output)
 
 
 class Request(AbstractRequest):
@@ -129,14 +142,88 @@ class FileRequest(Request):
 
 class EnumRequest(Request):
     @staticmethod
-    def parse(output: str) -> Generator[dict]:
+    def parse_mapping(descriptor: str) -> dict:
+        """Parse alternate setting memory mapping descriptor.
+        See: [UM0290 page 31](https://www.st.com/content/ccc/resource/technical/document/user_manual/cc/6d/c3/43/ea/29/4b/eb/CD00135281.pdf/files/CD00135281.pdf/jcr:content/translations/en.CD00135281.pdf)
+
+        :param descriptor: string descriptor
+        :return: the parsed descriptor
+        """
+
+        name, *desc = descriptor.split('/')
+        parsed = {"name": name[1:].strip(), "sectors": list()}
+
+        for address, sectors in zip(desc[0::2], desc[1::2]):
+            memory = {"address": address, "mapping": list()}
+
+            for sector in sectors.split(','):
+                number, specs = sector.split('*')
+
+                number = int(number)  # number of sectors
+                size = int(specs[:-2])
+
+                multiplier = specs[-2]
+                assert multiplier in (' ', 'B', 'K', 'M')
+
+                permissions = specs[-1]
+                assert permissions in (
+                    'a',  # readable
+                    'b',  # erasable
+                    'c',  # readable & erasable
+                    'd',  # writable
+                    'e',  # readable & writable
+                    'f',  # erasable & writable
+                    'g',  # readable, erasable & writable
+                )
+
+                memory["mapping"].append(
+                    {"number": number, "size": size, "multiplier": multiplier, "permissions": permissions}
+                )
+
+            parsed["sectors"].append(memory)
+
+        return parsed
+
+    @staticmethod
+    def parser(output: Generator[str]) -> Generator[dict]:
         pattern = re.compile(r"(?P<msg>.*?): \[(?P<vid>.*):(?P<pid>.*)\] (?P<prop>.*)")
-        for match in pattern.finditer(output):
+        for line in output:
+            match = pattern.match(line)
+            if not match:
+                continue
+
+            # generic parsing
             parsed = match.groupdict()
             for group in parsed.pop('prop').split(', '):
                 key, value = group.split('=')
                 parsed[key] = value.strip('"') if '"' in value else int(value)
+
+            # parsing memory mapping descriptor
+            alt_setting = EnumRequest.parse_mapping(parsed.pop("name"))
+            alt_setting["id"] = parsed.pop("alt")
+            parsed["alt"] = alt_setting
+
             yield parsed
+
+    @staticmethod
+    def parse(output: Generator[str]) -> Generator[dict]:
+        devices = dict()
+
+        # grouping by serial number
+        for parsed in EnumRequest.parser(output):
+            serial = parsed["serial"]
+            if serial not in devices:
+                devices[serial] = parsed
+                devices[serial]["alt"] = [parsed["alt"], ]
+            else:
+                for key in ("vid", "pid", "ver", "devnum", "cfg", "intf", "path"):
+                    assert parsed[key] == devices[serial][key]
+                devices[serial]["alt"].append(parsed["alt"])
+
+        for device in devices.values():
+            # sorting on alternate setting id
+            device["alt"].sort(key=lambda dev: dev["id"])
+            yield device
 
 
 def upload(file: str) -> FileRequest:
@@ -201,5 +288,10 @@ Found DFU: [0483:df11] ver=2200, devnum=7, cfg=1, intf=0, path="1-2", alt=3, nam
 Found DFU: [0483:df11] ver=2200, devnum=7, cfg=1, intf=0, path="1-2", alt=2, name="@OTP Memory /0x1FFF7800/01*512 e,01*016 e", serial="319235713237"
 Found DFU: [0483:df11] ver=2200, devnum=7, cfg=1, intf=0, path="1-2", alt=1, name="@Option Bytes  /0x1FFFC000/01*016 e", serial="319235713237"
 Found DFU: [0483:df11] ver=2200, devnum=7, cfg=1, intf=0, path="1-2", alt=0, name="@Internal Flash  /0x08000000/04*016Kg,01*064Kg,03*128Kg", serial="319235713237"
+Test Layout: [0123:abcd] ver=1800, devnum=32, cfg=2, intf=1, alt=3, name="@Not contiguous layout/0xF000/1*4Ka/0xE000/1*4Kg/0x8000/2*24Kg", serial="3262355B3231"
 '''
-    print(r.exec())
+    print(list(r.exec()))
+
+    command = download("/home/synchrotron-soleil.fr/persee/Downloads/binaries/blink_rate.NUCLEO_F401RE.bin").alt_setting("0").dfuse_address("0x08000000")
+    for i, line in enumerate(command.exec()):
+        print(i, line)

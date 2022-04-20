@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 
 from .common.publisher import Publisher
-from .routers import devices
+from .routers import devices, images
 
 description = """
 A REST API above the dfu-util CLI utility.
@@ -33,6 +33,7 @@ app = FastAPI(
 )
 
 app.include_router(devices.router)
+app.include_router(images.router)
 
 
 @app.on_event("startup")

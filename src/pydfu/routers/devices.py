@@ -6,14 +6,34 @@ from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 from starlette.requests import Request
 
+from .images import DataStore
 from ..common import dfu_util
 from ..common.publisher import Publisher
 
 router = APIRouter()
 
 
+class Mapping(BaseModel):
+    number: int
+    size: int
+    multiplier: str
+    permissions: str
+
+
+class Sector(BaseModel):
+    address: str
+    mapping: list[Mapping]
+
+
+class AlternateSetting(BaseModel):
+    id: int
+    name: str
+    sectors: list[Sector]
+
+
 class Device(BaseModel):
-    msg: str
+    # msg: str
+    serial: str
     vid: str
     pid: str
     ver: int
@@ -21,14 +41,48 @@ class Device(BaseModel):
     cfg: int
     intf: int
     path: str
-    alt: int
-    name: str
-    serial: str
+    alt: list[AlternateSetting]
+
+
+class FileRequest(BaseModel):
+    filename: str
 
 
 @router.get("/devices/", tags=["devices"], response_model=list[Device])
 async def get_devices():
     return dfu_util.enum().exec()
+
+
+@router.get("/devices/{serial}/{alt}", tags=["devices"], response_model=Device)
+async def get_device(serial: str, alt: int):
+    return next(iter(device for device in dfu_util.enum().exec()
+                     if device["serial"] == serial and device["alt"] == alt), None)
+
+
+@router.post("/devices/{serial}/{alt}/{address}", tags=["devices"])
+def post_firmware(serial: str, alt: int, address: str, filename: FileRequest):
+    file = DataStore.data_path / filename
+    assert file.exists()
+    (
+        dfu_util.download(file)
+            .serial(serial)
+            .alt_setting(alt)
+            .dfuse_address(address)
+            .exec()
+    )
+
+
+@router.post("/devices/{serial}/{alt}/{address}")
+def get_firmware(serial: str, alt: int, address: str, filename: FileRequest):
+    file = DataStore.data_path / filename
+    assert file.exists()
+    (
+        dfu_util.upload(file)
+            .serial(serial)
+            .alt_setting(alt)
+            .dfuse_address(address)
+            .exec()
+    )
 
 
 @router.get("/devices/events", tags=["devices"])
