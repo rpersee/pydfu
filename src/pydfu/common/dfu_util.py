@@ -85,11 +85,11 @@ class Request(AbstractRequest):
         return self
 
     def interface(self, intf: int) -> Request:
-        self._command.extend(("-i", intf))
+        self._command.extend(("-i", str(intf)))
         return self
 
     def alt_setting(self, alt: str | int) -> Request:
-        self._command.extend(("-a", alt))
+        self._command.extend(("-a", str(alt)))
         return self
 
     def serial(self, serial: str) -> Request:
@@ -111,11 +111,11 @@ class FileRequest(Request):
         return self
 
     def transfer_size(self, size: int) -> FileRequest:
-        self._command.extend(("-t", size))
+        self._command.extend(("-t", str(size)))
         return self
 
     def upload_size(self, size: int) -> FileRequest:
-        self._command.extend(("-Z", size))
+        self._command.extend(("-Z", str(size)))
         return self
 
     def dfuse_address(self, address, length=None, modifiers=None) -> FileRequest:
@@ -292,6 +292,10 @@ Test Layout: [0123:abcd] ver=1800, devnum=32, cfg=2, intf=1, alt=3, name="@Not c
 '''
     print(list(r.exec()))
 
-    command = download("/home/synchrotron-soleil.fr/persee/Downloads/binaries/blink_rate.NUCLEO_F401RE.bin").alt_setting("0").dfuse_address("0x08000000")
-    for i, line in enumerate(command.exec()):
+    for i, line in enumerate(
+            download("/home/synchrotron-soleil.fr/persee/Downloads/binaries/blink_rate.NUCLEO_F401RE.bin")
+            .alt_setting("0")
+            .dfuse_address("0x08000000")
+            .exec()
+    ):
         print(i, line)
