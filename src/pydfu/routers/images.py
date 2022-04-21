@@ -14,7 +14,7 @@ class DataStore:
     data_path.mkdir(exist_ok=True)
 
 
-@router.post("/images/")
+@router.post("/images/", tags=["images"])
 async def upload_image(
         upload_file: UploadFile = File(..., description="A file read as UploadFile")
 ):
@@ -25,7 +25,7 @@ async def upload_image(
     return {"Result": f"File saved as '{upload_file.filename}'."}
 
 
-@router.get("/images/")
+@router.get("/images/", tags=["images"])
 async def get_images():
     return [{"filename": file.name, "size": file.stat().st_size} for file in DataStore.data_path.glob('*')
             if file.is_file()]
