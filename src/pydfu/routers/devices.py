@@ -88,7 +88,7 @@ def get_firmware(serial: str, request: FileRequest):
     )
 
 
-@router.get("/devices/events", tags=["devices"])
+@router.get("/events", tags=["devices"])
 async def get_events(req: Request):
     async def event_publisher():
         queue = asyncio.Queue()
