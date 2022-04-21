@@ -2,6 +2,7 @@ import asyncio
 import warnings
 
 from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 from starlette.requests import Request
@@ -46,6 +47,8 @@ class Device(BaseModel):
 
 class FileRequest(BaseModel):
     filename: str
+    alt: int
+    address: str
 
 
 @router.get("/devices/", tags=["devices"], response_model=list[Device])
@@ -53,35 +56,35 @@ async def get_devices():
     return dfu_util.enum().exec()
 
 
-@router.get("/devices/{serial}/{alt}", tags=["devices"], response_model=Device)
-async def get_device(serial: str, alt: int):
+@router.get("/devices/{serial}", tags=["devices"], response_model=Device)
+async def get_device(serial: str):
     return next(iter(device for device in dfu_util.enum().exec()
-                     if device["serial"] == serial and device["alt"] == alt), None)
+                     if device["serial"] == serial), None)
 
 
-@router.post("/devices/{serial}/{alt}/{address}", tags=["devices"])
-def post_firmware(serial: str, alt: int, address: str, filename: FileRequest):
-    file = DataStore.data_path / filename
+@router.post("/devices/{serial}", tags=["devices"])
+def post_firmware(serial: str, request: FileRequest):
+    file = DataStore.data_path / request.filename
     assert file.exists()
-    (
+    return StreamingResponse(
         dfu_util.download(file)
-            .serial(serial)
-            .alt_setting(alt)
-            .dfuse_address(address)
-            .exec()
+        .serial(serial)
+        .alt_setting(request.alt)
+        .dfuse_address(request.address)
+        .exec()
     )
 
 
-@router.post("/devices/{serial}/{alt}/{address}")
-def get_firmware(serial: str, alt: int, address: str, filename: FileRequest):
-    file = DataStore.data_path / filename
-    assert file.exists()
-    (
+@router.get("/devices/{serial}", tags=["devices"])
+def get_firmware(serial: str, request: FileRequest):
+    file = DataStore.data_path / request.filename
+    assert not file.exists()
+    return StreamingResponse(
         dfu_util.upload(file)
-            .serial(serial)
-            .alt_setting(alt)
-            .dfuse_address(address)
-            .exec()
+        .serial(serial)
+        .alt_setting(request.alt)
+        .dfuse_address(request.address)
+        .exec()
     )
 
 
